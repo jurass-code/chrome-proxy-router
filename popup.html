@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SOCKS5 Domain Router</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="header">
+      <h1>SOCKS5 Router</h1>
+      <label class="switch" title="Enable/disable routing">
+        <input id="enabledToggle" type="checkbox" />
+        <span class="switch-track"></span>
+      </label>
+    </header>
+
+    <section class="card">
+      <h2>SOCKS5 proxy</h2>
+      <div class="row">
+        <label class="field">
+          <span>Host</span>
+          <input id="proxyHost" type="text" placeholder="127.0.0.1" autocomplete="off" />
+        </label>
+        <label class="field field-port">
+          <span>Port</span>
+          <input id="proxyPort" type="number" min="1" max="65535" placeholder="1080" />
+        </label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Routed domains</h2>
+      <p class="hint">
+        Enter a domain like <code>example.com</code>. Subdomains (<code>www.example.com</code>)
+        are matched automatically.
+      </p>
+
+      <form id="addDomainForm" class="row">
+        <input
+          id="domainInput"
+          type="text"
+          placeholder="example.com"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+        />
+        <button type="submit" class="btn btn-primary">Add</button>
+      </form>
+
+      <ul id="domainList" class="domain-list"></ul>
+    </section>
+
+    <footer class="footer">
+      <button id="saveButton" class="btn btn-primary btn-block">Save &amp; apply</button>
+      <p id="statusMessage" class="status" aria-live="polite"></p>
+    </footer>
+
+    <script src="popup.js" type="module"></script>
+  </body>
+</html>
