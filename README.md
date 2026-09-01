@@ -2,18 +2,21 @@
 
 A minimal Chrome extension (Manifest V3) that routes traffic for specific domains through a SOCKS5 or HTTP proxy, leaving everything else direct. Managed from a popup UI.
 
+**Multiple proxies:** each proxy has its own domain list, so `a.dev` can go through one proxy and `b.org` through another.
+
 ## What it does
 
-- Sends requests to chosen domains through a proxy:
+- Any number of proxies, each with its own set of routed domains:
   - **SOCKS5** — `SOCKS5 host:port` (e.g. `127.0.0.1:1080` for a local SSH tunnel / Tor / `ssh -D`).
   - **HTTP** — `PROXY host:port`, with **optional login/password**.
 - Leaves all other traffic direct.
 - Subdomain-aware: adding `example.com` also matches `www.example.com`, `api.example.com`, etc.
-- Persisted config; proxy is restored on browser restart.
+- If the same domain is listed on several proxies, the **first proxy in the popup's list wins** — reorder cards with the ↑/↓ arrows to set priority.
+- Persisted config; proxies are restored on browser restart. Old single-proxy configs are migrated automatically.
 
 ## HTTP proxy authentication
 
-A PAC script cannot carry credentials, so the extension answers the proxy's `407` challenge itself via `chrome.webRequest.onAuthRequired` (backed by the `webRequestAuthProvider` permission, available in current Chrome). It only replies to challenges coming from *your* configured proxy — website basic-auth prompts are left to the browser.
+A PAC script cannot carry credentials, so the extension answers each proxy's `407` challenge itself via `chrome.webRequest.onAuthRequired` (backed by the `webRequestAuthProvider` permission, available in current Chrome). Challenges are matched against every configured proxy and that proxy's own credentials are returned. Website basic-auth prompts are left to the browser.
 
 Notes:
 
@@ -23,7 +26,7 @@ Notes:
 
 ## Important limitation
 
-Chrome's `chrome.proxy` API applies proxy settings **per profile**, not per tab. True per-tab routing is not supported by the platform. If you need "this tab goes through proxy A, that tab through proxy B", that requires a separate Chrome profile, not an extension. This extension follows the proven per-domain approach (same as SwitchyOmega).
+Chrome's `chrome.proxy` API applies proxy settings **per profile, not per tab**. True per-tab routing is not supported by the platform. If you need "this tab goes through proxy A, that tab through proxy B", that requires a separate Chrome profile, not an extension. This extension follows the proven per-domain approach (same as SwitchyOmega).
 
 ## Install
 
@@ -35,17 +38,19 @@ Chrome's `chrome.proxy` API applies proxy settings **per profile**, not per tab.
 ## Use
 
 1. Toggle the switch in the popup header to enable routing.
-2. Pick the proxy **Type** (SOCKS5 or HTTP), set **Host** and **Port**.
-3. For an HTTP proxy that requires auth, fill in **Username** and **Password** (optional).
-4. Add the domains you want routed (e.g. `example.com`).
+2. Click **+ Add proxy** for each proxy: give it a name, pick the **Type** (SOCKS5 or HTTP), set **Host** and **Port**; for an HTTP proxy that requires auth, fill in **Username** and **Password** (optional).
+3. Add the domains that should go through that proxy (e.g. `example.com`).
+4. Repeat for the other proxies. Order matters: on overlapping domains the top proxy wins (reorder with ↑/↓).
 5. Click **Save & apply**.
 
 ## Files
 
 - `manifest.json` — MV3 manifest with `proxy`, `storage`, `webRequest`, `webRequestAuthProvider` permissions.
-- `background.js` — service worker: applies `chrome.proxy.settings`, answers HTTP proxy auth challenges, surfaces `onProxyError`.
+- `background.js` — service worker: applies `chrome.proxy.settings`, answers HTTP proxy auth challenges (multi-proxy aware), surfaces `onProxyError`.
 - `config.js` — config persistence + PAC script generation. The PAC script is what actually does per-domain routing inside Chrome's network stack.
-- `popup.html` / `popup.css` / `popup.js` — UI for editing the proxy and the domain list.
+- `popup.html` / `popup.css` / `popup.js` — UI: one card per proxy with its own domain list, reorder/remove controls.
+- `test/pac.test.mjs` — zero-dependency Node tests: v1→v2 config migration, sanitization, multi-proxy PAC routing, priority on overlapping domains. Run: `node test/pac.test.mjs`.
+- `test/popup.test.html` — popup page with a mocked `chrome` runtime for manual UI testing in a plain browser: `open test/popup.test.html`.
 
 ## Icons
 
@@ -53,4 +58,4 @@ The manifest references `icons/icon16.png`, `icon48.png`, `icon128.png`. Drop yo
 
 ## How routing works
 
-The extension generates a PAC (Proxy Auto-Config) script that Chrome evaluates for every request. The script checks the request's host against your domain list and returns `SOCKS5 host:port` / `PROXY host:port` for matches, `DIRECT` otherwise. This runs inside Chrome's network stack, so it's fast and works for all sub-resources of a page, not just the top-level document.
+The extension generates a PAC (Proxy Auto-Config) script that Chrome evaluates for every request. The script embeds an ordered list of routes (`[{directive, host, port, domains}]`), checks the request's host against each proxy's domain list in order, and returns `SOCKS5 host:port` / `PROXY host:port` for the first match, `DIRECT` otherwise. This runs inside Chrome's network stack, so it's fast and works for all sub-resources of a page, not just the top-level document.

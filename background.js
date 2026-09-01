@@ -45,31 +45,34 @@ chrome.proxy.onProxyError.addListener((error) => {
 });
 
 // Authenticated HTTP proxies: a PAC script cannot carry credentials, so we answer
-// the proxy's 407 challenge here. We only respond to challenges that come from
-// our configured HTTP proxy; website basic-auth prompts are left to the browser.
+// each proxy's 407 challenge here. Multiple HTTP proxies are supported: the
+// challenger is matched against every configured proxy and that proxy's own
+// credentials are returned. Website basic-auth prompts are left to the browser.
 chrome.webRequest.onAuthRequired.addListener(
   (details) => {
-    const proxy = cachedConfig?.proxy;
-    if (!proxy || proxy.type !== "http" || !proxy.username) {
-      return; // take no action on the challenge
-    }
     if (!details.isProxy) {
-      return;
+      return; // website auth challenge — take no action
     }
     const { challenger } = details;
-    if (
-      !challenger ||
-      challenger.host !== proxy.host ||
-      challenger.port !== proxy.port
-    ) {
+    if (!challenger) {
       return;
     }
-    return {
-      authCredentials: {
-        username: proxy.username,
-        password: proxy.password,
-      },
-    };
+    for (const proxy of cachedConfig?.proxies ?? []) {
+      if (
+        proxy.type === "http" &&
+        proxy.username &&
+        challenger.host === proxy.host &&
+        challenger.port === proxy.port
+      ) {
+        return {
+          authCredentials: {
+            username: proxy.username,
+            password: proxy.password,
+          },
+        };
+      }
+    }
+    return; // no configured proxy claims this challenge
   },
   { urls: ["<all_urls>"] },
   ["blocking"],

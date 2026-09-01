@@ -16,66 +16,17 @@
     </header>
 
     <section class="card">
-      <h2>Proxy</h2>
-      <div class="row">
-        <label class="field field-type">
-          <span>Type</span>
-          <select id="proxyType">
-            <option value="socks5">SOCKS5</option>
-            <option value="http">HTTP</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>Host</span>
-          <input id="proxyHost" type="text" placeholder="127.0.0.1" autocomplete="off" />
-        </label>
-        <label class="field field-port">
-          <span>Port</span>
-          <input id="proxyPort" type="number" min="1" max="65535" placeholder="1080" />
-        </label>
-      </div>
-
-      <div id="authFields" class="auth-fields" hidden>
-        <div class="row">
-          <label class="field">
-            <span>Username</span>
-            <input
-              id="proxyUsername"
-              type="text"
-              autocomplete="off"
-              autocapitalize="off"
-              spellcheck="false"
-            />
-          </label>
-          <label class="field">
-            <span>Password</span>
-            <input id="proxyPassword" type="password" autocomplete="off" />
-          </label>
-        </div>
-        <p class="hint">Optional. Fill in only if your HTTP proxy requires credentials.</p>
-      </div>
-    </section>
-
-    <section class="card">
-      <h2>Routed domains</h2>
+      <h2>Proxies &amp; domains</h2>
       <p class="hint">
-        Enter a domain like <code>example.com</code>. Subdomains (<code>www.example.com</code>)
-        are matched automatically.
+        Each proxy has its own domain list. If a domain is listed on several proxies,
+        the top one wins — reorder with the arrows. Subdomains
+        (<code>www.example.com</code>) are matched automatically.
       </p>
 
-      <form id="addDomainForm" class="row">
-        <input
-          id="domainInput"
-          type="text"
-          placeholder="example.com"
-          autocomplete="off"
-          autocapitalize="off"
-          spellcheck="false"
-        />
-        <button type="submit" class="btn btn-primary">Add</button>
-      </form>
-
-      <ul id="domainList" class="domain-list"></ul>
+      <div id="proxyList" class="proxy-list"></div>
+      <button id="addProxyButton" class="btn btn-block btn-add" type="button">
+        + Add proxy
+      </button>
     </section>
 
     <footer class="footer">

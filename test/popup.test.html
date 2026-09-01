@@ -1,0 +1,91 @@
+<!doctype html>
+<!-- Popup page with a mocked chrome.runtime for manual UI testing in a plain
+     browser. The mock serves a v2 config and records what "Save & apply"
+     sends, printing it to the console and window.lastSavedConfig. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Domain Proxy Router — UI test</title>
+    <link rel="stylesheet" href="../popup.css" />
+  </head>
+  <body>
+    <header class="header">
+      <h1>Domain Proxy Router</h1>
+      <label class="switch" title="Enable/disable routing">
+        <input id="enabledToggle" type="checkbox" />
+        <span class="switch-track"></span>
+      </label>
+    </header>
+
+    <section class="card">
+      <h2>Proxies &amp; domains</h2>
+      <p class="hint">
+        Each proxy has its own domain list. If a domain is listed on several proxies,
+        the top one wins — reorder with the arrows. Subdomains
+        (<code>www.example.com</code>) are matched automatically.
+      </p>
+
+      <div id="proxyList" class="proxy-list"></div>
+      <button id="addProxyButton" class="btn btn-block btn-add" type="button">
+        + Add proxy
+      </button>
+    </section>
+
+    <footer class="footer">
+      <button id="saveButton" class="btn btn-primary btn-block">Save &amp; apply</button>
+      <p id="statusMessage" class="status" aria-live="polite"></p>
+    </footer>
+
+    <script>
+      // --- chrome mock (runs before popup.js module executes) ---
+      window.mockState = {
+        savedConfigs: [],
+        config: {
+          enabled: true,
+          proxies: [
+            {
+              id: "p1",
+              name: "Local SOCKS",
+              type: "socks5",
+              host: "127.0.0.1",
+              port: 1080,
+              username: "",
+              password: "",
+              domains: ["a.dev"],
+            },
+            {
+              id: "p2",
+              name: "Corp HTTP",
+              type: "http",
+              host: "10.0.0.1",
+              port: 3128,
+              username: "u1",
+              password: "p1",
+              domains: ["b.org"],
+            },
+          ],
+        },
+      };
+      globalThis.chrome = {
+        runtime: {
+          sendMessage: (message) => {
+            if (message?.type === "getConfig") {
+              return Promise.resolve({
+                ok: true,
+                config: JSON.parse(JSON.stringify(window.mockState.config)),
+              });
+            }
+            if (message?.type === "setConfig") {
+              window.mockState.savedConfigs.push(message.config);
+              window.mockState.config = message.config;
+              return Promise.resolve({ ok: true, config: message.config });
+            }
+            return Promise.resolve({ ok: true });
+          },
+        },
+      };
+    </script>
+    <script src="../popup.js" type="module"></script>
+  </body>
+</html>
