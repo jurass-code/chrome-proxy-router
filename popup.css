@@ -150,6 +150,33 @@ code {
   margin-bottom: 8px;
 }
 
+.collapse-btn {
+  border-color: transparent;
+  font-size: 10px;
+}
+
+.card-summary {
+  display: none;
+  color: var(--fg-muted);
+  font-size: 11px;
+  padding: 0 6px 0 30px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.proxy-card.collapsed .card-summary {
+  display: block;
+}
+
+.proxy-card.collapsed .proxy-card-body {
+  display: none;
+}
+
+.proxy-card.collapsed .proxy-card-header {
+  margin-bottom: 0;
+}
+
 .proxy-name {
   flex: 1;
   min-width: 0;

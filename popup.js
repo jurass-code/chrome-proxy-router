@@ -16,6 +16,30 @@ const elements = {
 // Each entry: { id, name, type, host, port, username, password, domains[] }.
 let proxies = [];
 
+// Collapsed card ids, persisted in localStorage so the state survives popup
+// reopens (the popup is destroyed every time it closes).
+const COLLAPSED_KEY = "collapsedProxyIds";
+
+function loadCollapsedIds() {
+  try {
+    const raw = localStorage.getItem(COLLAPSED_KEY);
+    const ids = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(ids) ? ids.filter((id) => typeof id === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function persistCollapsedIds() {
+  try {
+    localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsedIds]));
+  } catch {
+    // storage unavailable — collapse state stays session-only
+  }
+}
+
+const collapsedIds = loadCollapsedIds();
+
 function sendMessage(message) {
   return chrome.runtime.sendMessage(message);
 }
@@ -96,9 +120,44 @@ function renderProxies() {
 
 function buildProxyCard(proxy, index) {
   const card = el("section", "proxy-card");
+  card.classList.toggle("collapsed", collapsedIds.has(proxy.id));
 
-  // --- Header: editable name + order/remove actions ---
+  // Summary line shown in place of the body when the card is collapsed.
+  const summary = el("div", "card-summary");
+  const refreshSummary = () => {
+    const type = (PROXY_TYPES.includes(proxy.type) ? proxy.type : "socks5").toUpperCase();
+    const host = (proxy.host || "").trim() || "—";
+    const port = String(proxy.port || "").trim() || "—";
+    const count = proxy.domains.length;
+    summary.textContent = `${type} · ${host}:${port} · ${count} ${count === 1 ? "domain" : "domains"}`;
+    summary.title = summary.textContent;
+  };
+  refreshSummary();
+
+  // --- Header: collapse toggle, editable name, order/remove actions ---
   const header = el("div", "proxy-card-header");
+
+  const toggle = el("button", "btn-icon collapse-btn");
+  toggle.type = "button";
+  const syncCollapseUi = () => {
+    const collapsed = collapsedIds.has(proxy.id);
+    toggle.textContent = collapsed ? "▸" : "▾";
+    toggle.title = collapsed ? "Expand" : "Collapse";
+    if (collapsed) {
+      refreshSummary();
+    }
+  };
+  toggle.addEventListener("click", () => {
+    if (collapsedIds.has(proxy.id)) {
+      collapsedIds.delete(proxy.id);
+    } else {
+      collapsedIds.add(proxy.id);
+    }
+    persistCollapsedIds();
+    card.classList.toggle("collapsed");
+    syncCollapseUi();
+  });
+  syncCollapseUi();
 
   const name = textInput({ value: proxy.name, placeholder: `Proxy ${index + 1}` });
   name.className = "proxy-name";
@@ -116,7 +175,7 @@ function buildProxyCard(proxy, index) {
   remove.classList.add("remove-btn");
   actions.append(up, down, remove);
 
-  header.append(name, actions);
+  header.append(toggle, name, actions);
 
   // --- Type / Host / Port ---
   const row = el("div", "row");
@@ -224,7 +283,10 @@ function buildProxyCard(proxy, index) {
   domainsSection.append(addForm, domainList);
   renderDomainChips(proxy, domainList);
 
-  card.append(header, row, authFields, domainsSection);
+  const body = el("div", "proxy-card-body");
+  body.append(row, authFields, domainsSection);
+
+  card.append(header, summary, body);
   return card;
 }
 
@@ -265,7 +327,10 @@ function moveProxy(index, delta) {
 }
 
 function removeProxy(index) {
-  proxies.splice(index, 1);
+  const [removed] = proxies.splice(index, 1);
+  if (removed && collapsedIds.delete(removed.id)) {
+    persistCollapsedIds();
+  }
   renderProxies();
 }
 
