@@ -68,13 +68,19 @@ h2 {
   flex: 0 0 80px;
 }
 
+.field-type {
+  flex: 0 0 86px;
+}
+
 .field span {
   font-size: 11px;
   color: var(--fg-muted);
 }
 
 input[type="text"],
-input[type="number"] {
+input[type="number"],
+input[type="password"],
+select {
   width: 100%;
   background: var(--bg-input);
   color: var(--fg);
@@ -83,6 +89,23 @@ input[type="number"] {
   padding: 6px 8px;
   font-size: 13px;
   font-family: inherit;
+}
+
+select {
+  cursor: pointer;
+}
+
+select option {
+  background: var(--bg-card);
+  color: var(--fg);
+}
+
+.auth-fields {
+  margin-top: 10px;
+}
+
+.auth-fields[hidden] {
+  display: none;
 }
 
 input:focus {

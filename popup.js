@@ -1,11 +1,16 @@
 const PROXY_PORT_MIN = 1;
 const PROXY_PORT_MAX = 65535;
+const PROXY_TYPES = ["socks5", "http"];
 const STATUS_TIMEOUT_MS = 2500;
 
 const elements = {
   enabledToggle: document.getElementById("enabledToggle"),
+  proxyType: document.getElementById("proxyType"),
   proxyHost: document.getElementById("proxyHost"),
   proxyPort: document.getElementById("proxyPort"),
+  authFields: document.getElementById("authFields"),
+  proxyUsername: document.getElementById("proxyUsername"),
+  proxyPassword: document.getElementById("proxyPassword"),
   addDomainForm: document.getElementById("addDomainForm"),
   domainInput: document.getElementById("domainInput"),
   domainList: document.getElementById("domainList"),
@@ -97,16 +102,28 @@ function removeDomain(domain) {
 }
 
 function readProxyFromForm() {
+  const type = elements.proxyType.value;
   const host = elements.proxyHost.value.trim();
   const port = Number(elements.proxyPort.value);
+  const username = elements.proxyUsername.value.trim();
+  const password = elements.proxyPassword.value;
 
+  if (!PROXY_TYPES.includes(type)) {
+    return { ok: false, error: "Unknown proxy type" };
+  }
   if (!host) {
     return { ok: false, error: "Host is required" };
   }
   if (!Number.isFinite(port) || port < PROXY_PORT_MIN || port > PROXY_PORT_MAX) {
     return { ok: false, error: "Port must be between 1 and 65535" };
   }
-  return { ok: true, host, port };
+  if ((username || password) && (!username || !password)) {
+    return {
+      ok: false,
+      error: "Username and password must be filled in together",
+    };
+  }
+  return { ok: true, type, host, port, username, password };
 }
 
 async function applyChanges() {
@@ -118,7 +135,13 @@ async function applyChanges() {
 
   const config = {
     enabled: elements.enabledToggle.checked,
-    proxy: { host: proxyResult.host, port: proxyResult.port },
+    proxy: {
+      type: proxyResult.type,
+      host: proxyResult.host,
+      port: proxyResult.port,
+      username: proxyResult.username,
+      password: proxyResult.password,
+    },
     routedDomains: routedDomains.slice(),
   };
 
@@ -133,6 +156,10 @@ async function applyChanges() {
   }
 }
 
+function toggleAuthFields(type) {
+  elements.authFields.hidden = type !== "http";
+}
+
 async function populateFromConfig() {
   try {
     const response = await sendMessage({ type: "getConfig" });
@@ -140,9 +167,16 @@ async function populateFromConfig() {
       throw new Error(response?.error ?? "Unknown error");
     }
     const { config } = response;
+    const proxy = config.proxy ?? {};
+    const type = PROXY_TYPES.includes(proxy.type) ? proxy.type : "socks5";
+
     elements.enabledToggle.checked = Boolean(config.enabled);
-    elements.proxyHost.value = config.proxy.host;
-    elements.proxyPort.value = String(config.proxy.port);
+    elements.proxyType.value = type;
+    elements.proxyHost.value = proxy.host ?? "";
+    elements.proxyPort.value = String(proxy.port ?? "");
+    elements.proxyUsername.value = proxy.username ?? "";
+    elements.proxyPassword.value = proxy.password ?? "";
+    toggleAuthFields(type);
     routedDomains = Array.isArray(config.routedDomains) ? config.routedDomains.slice() : [];
     renderDomainList();
   } catch (error) {
@@ -151,6 +185,10 @@ async function populateFromConfig() {
 }
 
 function bindEvents() {
+  elements.proxyType.addEventListener("change", () => {
+    toggleAuthFields(elements.proxyType.value);
+  });
+
   elements.enabledToggle.addEventListener("change", async () => {
     try {
       // Save the current form state alongside the toggle, so the enabled flag is persisted

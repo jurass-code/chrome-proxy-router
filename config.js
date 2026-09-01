@@ -1,15 +1,30 @@
 // Default configuration persisted in chrome.storage.local.
-// Shape: { proxy: { host, port }, routedDomains: string[], enabled: boolean }
+// Shape: {
+//   proxy: {
+//     type: "socks5" | "http",
+//     host,
+//     port,
+//     username: string, // optional, HTTP proxy auth
+//     password: string, // optional, HTTP proxy auth
+//   },
+//   routedDomains: string[],
+//   enabled: boolean,
+// }
 const DEFAULT_CONFIG = {
   enabled: false,
   proxy: {
+    type: "socks5",
     host: "127.0.0.1",
     port: 1080,
+    username: "",
+    password: "",
   },
   routedDomains: [],
 };
 
 const STORAGE_KEY = "socks5RouterConfig";
+
+const PROXY_TYPES = ["socks5", "http"];
 
 // Load the saved config, falling back to defaults if anything is missing or corrupted.
 // We never let a bad storage state crash the service worker: callers always get a usable object.
@@ -20,11 +35,17 @@ export async function loadConfig() {
     if (!config || typeof config !== "object") {
       return { ...DEFAULT_CONFIG };
     }
+    const type = PROXY_TYPES.includes(config.proxy?.type)
+      ? config.proxy.type
+      : DEFAULT_CONFIG.proxy.type;
     return {
       enabled: Boolean(config.enabled),
       proxy: {
+        type,
         host: String(config.proxy?.host ?? DEFAULT_CONFIG.proxy.host),
         port: Number(config.proxy?.port ?? DEFAULT_CONFIG.proxy.port),
+        username: String(config.proxy?.username ?? ""),
+        password: String(config.proxy?.password ?? ""),
       },
       routedDomains: Array.isArray(config.routedDomains)
         ? config.routedDomains.map(String)
@@ -40,11 +61,16 @@ export async function saveConfig(config) {
   await chrome.storage.local.set({ [STORAGE_KEY]: config });
 }
 
-// Build a PAC (Proxy Auto-Config) script that sends matched domains through the SOCKS5
-// proxy and everything else direct. We embed the rules into the script source so Chrome
-// can evaluate them synchronously per request without round-tripping to the service worker.
+// Build a PAC (Proxy Auto-Config) script that sends matched domains through the
+// proxy and everything else direct. We embed the rules into the script source so
+// Chrome can evaluate them synchronously per request without round-tripping to
+// the service worker.
+//
+// Note: a PAC script cannot carry proxy credentials — for an authenticated HTTP
+// proxy the credentials are supplied separately from background.js via
+// chrome.webRequest.onAuthRequired.
 function buildPacScript(config) {
-  const { host, port } = config.proxy;
+  const { type, host, port } = config.proxy;
   const domains = config.routedDomains
     .map((domain) => domain.trim().toLowerCase())
     .filter((domain) => domain.length > 0);
@@ -54,9 +80,11 @@ function buildPacScript(config) {
   const domainsJson = JSON.stringify(domains);
   const proxyHost = JSON.stringify(host);
   const proxyPort = Number(port);
+  const proxyDirective = JSON.stringify(type === "http" ? "PROXY" : "SOCKS5");
 
   return `
     const ROUTED_DOMAINS = ${domainsJson};
+    const PROXY_DIRECTIVE = ${proxyDirective};
     const PROXY_HOST = ${proxyHost};
     const PROXY_PORT = ${proxyPort};
 
@@ -68,7 +96,7 @@ function buildPacScript(config) {
       for (let i = 0; i < ROUTED_DOMAINS.length; i++) {
         const rule = ROUTED_DOMAINS[i];
         if (normalized === rule || normalized.endsWith("." + rule)) {
-          return "SOCKS5 " + PROXY_HOST + ":" + PROXY_PORT;
+          return PROXY_DIRECTIVE + " " + PROXY_HOST + ":" + PROXY_PORT;
         }
       }
       return "DIRECT";

@@ -1,16 +1,21 @@
 {
   "manifest_version": 3,
-  "name": "SOCKS5 Domain Router",
-  "version": "1.0.0",
-  "description": "Route specific domains through a SOCKS5 proxy while leaving the rest of your traffic direct.",
-  "permissions": ["proxy", "storage"],
+  "name": "Domain Proxy Router",
+  "version": "1.1.0",
+  "description": "Route specific domains through a SOCKS5 or HTTP proxy (with optional login/password) while leaving the rest of your traffic direct.",
+  "permissions": [
+    "proxy",
+    "storage",
+    "webRequest",
+    "webRequestAuthProvider"
+  ],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
   "action": {
-    "default_title": "SOCKS5 Domain Router",
+    "default_title": "Domain Proxy Router",
     "default_popup": "popup.html"
   },
   "icons": {

@@ -3,12 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>SOCKS5 Domain Router</title>
+    <title>Domain Proxy Router</title>
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
     <header class="header">
-      <h1>SOCKS5 Router</h1>
+      <h1>Domain Proxy Router</h1>
       <label class="switch" title="Enable/disable routing">
         <input id="enabledToggle" type="checkbox" />
         <span class="switch-track"></span>
@@ -16,8 +16,15 @@
     </header>
 
     <section class="card">
-      <h2>SOCKS5 proxy</h2>
+      <h2>Proxy</h2>
       <div class="row">
+        <label class="field field-type">
+          <span>Type</span>
+          <select id="proxyType">
+            <option value="socks5">SOCKS5</option>
+            <option value="http">HTTP</option>
+          </select>
+        </label>
         <label class="field">
           <span>Host</span>
           <input id="proxyHost" type="text" placeholder="127.0.0.1" autocomplete="off" />
@@ -26,6 +33,26 @@
           <span>Port</span>
           <input id="proxyPort" type="number" min="1" max="65535" placeholder="1080" />
         </label>
+      </div>
+
+      <div id="authFields" class="auth-fields" hidden>
+        <div class="row">
+          <label class="field">
+            <span>Username</span>
+            <input
+              id="proxyUsername"
+              type="text"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+            />
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input id="proxyPassword" type="password" autocomplete="off" />
+          </label>
+        </div>
+        <p class="hint">Optional. Fill in only if your HTTP proxy requires credentials.</p>
       </div>
     </section>
 
