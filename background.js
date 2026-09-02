@@ -60,6 +60,7 @@ chrome.webRequest.onAuthRequired.addListener(
     for (const proxy of cachedConfig?.proxies ?? []) {
       if (
         proxy.type === "http" &&
+        proxy.enabled !== false && // disabled proxies get no traffic -> no 407s
         proxy.username &&
         challenger.host === proxy.host &&
         challenger.port === proxy.port

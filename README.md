@@ -1,18 +1,24 @@
 # Domain Proxy Router
 
-A minimal Chrome extension (Manifest V3) that routes traffic for specific domains through a SOCKS5 or HTTP proxy, leaving everything else direct. Managed from a popup UI.
+A minimal Chrome extension (Manifest V3) that routes traffic through a SOCKS5 or HTTP proxy — for chosen domains only, or everywhere except chosen domains — leaving the rest direct. Managed from a popup UI.
 
 **Multiple proxies:** each proxy has its own domain list, so `a.dev` can go through one proxy and `b.org` through another.
 
 ## What it does
 
-- Any number of proxies, each with its own set of routed domains:
+- Any number of proxies, each with its own domain list and a per-proxy **routing mode**:
+  - **Only listed domains** — exactly the listed domains go through this proxy.
+  - **All except listed** — *everything* goes through this proxy except the listed domains (e.g. send the whole browser through a VPN except a few local sites). An empty list means "route everything".
+- **Per-proxy on/off switch** — each card has its own toggle next to the name: a disabled proxy keeps its settings but is excluded from routing (dimmed in the UI, absent from the PAC). Toggling applies immediately. An incomplete proxy (no host/port yet) can be saved only while disabled.
+- Proxy types:
   - **SOCKS5** — `SOCKS5 host:port` (e.g. `127.0.0.1:1080` for a local SSH tunnel / Tor / `ssh -D`).
   - **HTTP** — `PROXY host:port`, with **optional login/password**.
-- Leaves all other traffic direct.
 - Subdomain-aware: adding `example.com` also matches `www.example.com`, `api.example.com`, etc.
-- If the same domain is listed on several proxies, the **first proxy in the popup's list wins** — reorder cards with the ↑/↓ arrows to set priority.
-- Persisted config; proxies are restored on browser restart. Old single-proxy configs are migrated automatically.
+- Priority:
+  - **"Only listed domains" proxies are checked first**, in card order — on overlapping domains the top one wins (reorder cards with ↑/↓).
+  - **"All except listed" proxies are fallbacks**, checked in card order after all listed-domain proxies: the first one whose exception list doesn't contain the host claims the traffic; a host excluded by every such proxy goes direct.
+  - So a domain listed on a "only listed" proxy always overrides a same-domain exception on a catch-all proxy.
+- Persisted config; proxies are restored on browser restart. Old single-proxy configs and configs saved before routing modes existed are migrated automatically (mode defaults to "only listed domains").
 
 ## HTTP proxy authentication
 
@@ -38,18 +44,21 @@ Chrome's `chrome.proxy` API applies proxy settings **per profile, not per tab**.
 ## Use
 
 1. Toggle the switch in the popup header to enable routing.
-2. Click **+ Add proxy** for each proxy: give it a name, pick the **Type** (SOCKS5 or HTTP), set **Host** and **Port**; for an HTTP proxy that requires auth, fill in **Username** and **Password** (optional).
-3. Add the domains that should go through that proxy (e.g. `example.com`).
-4. Repeat for the other proxies. Order matters: on overlapping domains the top proxy wins (reorder with ↑/↓).
-5. Click **Save & apply**.
+2. Click **+ Add proxy** for each proxy: give it a name, pick the **Type** (SOCKS5 or HTTP), set **Host** and **Port**; for an HTTP proxy that requires auth, fill in **Username** and **Password** (optional). Use the small switch next to the name to enable/disable the proxy without losing its settings.
+3. Pick the **Routing mode**:
+   - **Only listed domains** — route just the domains you add below;
+   - **All except listed** — route everything else (the list becomes the exceptions).
+4. Add the domains for that proxy (e.g. `example.com`). Paste a whole list at once — one domain per line, or comma/whitespace separated; Enter adds, Shift+Enter is a line break. Duplicates and invalid entries are skipped with a summary.
+5. Repeat for the other proxies. Order matters — see the priority rules above.
+6. Click **Save & apply**.
 
 ## Files
 
 - `manifest.json` — MV3 manifest with `proxy`, `storage`, `webRequest`, `webRequestAuthProvider` permissions.
 - `background.js` — service worker: applies `chrome.proxy.settings`, answers HTTP proxy auth challenges (multi-proxy aware), surfaces `onProxyError`.
 - `config.js` — config persistence + PAC script generation. The PAC script is what actually does per-domain routing inside Chrome's network stack.
-- `popup.html` / `popup.css` / `popup.js` — UI: one card per proxy with its own domain list, reorder/remove controls.
-- `test/pac.test.mjs` — zero-dependency Node tests: v1→v2 config migration, sanitization, multi-proxy PAC routing, priority on overlapping domains. Run: `node test/pac.test.mjs`.
+- `popup.html` / `popup.css` / `popup.js` — UI: one card per proxy with routing mode, its own domain list, reorder/remove controls.
+- `test/pac.test.mjs` — zero-dependency Node tests: v1→v2 config migration, sanitization, multi-proxy PAC routing, include/exclude modes and their priority. Run: `node test/pac.test.mjs`.
 - `test/popup.test.html` — popup page with a mocked `chrome` runtime for manual UI testing in a plain browser: `open test/popup.test.html`.
 
 ## Icons
@@ -58,4 +67,9 @@ The manifest references `icons/icon16.png`, `icon48.png`, `icon128.png`. Drop yo
 
 ## How routing works
 
-The extension generates a PAC (Proxy Auto-Config) script that Chrome evaluates for every request. The script embeds an ordered list of routes (`[{directive, host, port, domains}]`), checks the request's host against each proxy's domain list in order, and returns `SOCKS5 host:port` / `PROXY host:port` for the first match, `DIRECT` otherwise. This runs inside Chrome's network stack, so it's fast and works for all sub-resources of a page, not just the top-level document.
+The extension generates a PAC (Proxy Auto-Config) script that Chrome evaluates for every request. The script embeds an ordered list of routes (`[{mode, directive, host, port, domains}]`) and evaluates them in two passes:
+
+1. **"Only listed domains" routes** (in card order): the first whose domain list matches the host wins → `SOCKS5 host:port` / `PROXY host:port`.
+2. **"All except listed" routes** (in card order): the first whose exception list does *not* match the host claims everything else.
+
+A host matched by neither pass goes `DIRECT`. This runs inside Chrome's network stack, so it's fast and works for all sub-resources of a page, not just the top-level document.

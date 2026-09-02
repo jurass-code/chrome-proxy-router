@@ -18,8 +18,9 @@
     <section class="card">
       <h2>Proxies &amp; domains</h2>
       <p class="hint">
-        Each proxy has its own domain list. If a domain is listed on several proxies,
-        the top one wins — reorder with the arrows. Subdomains
+        Each proxy routes either only its listed domains, or everything except
+        them. Listed-domain proxies are checked first; among "all except"
+        proxies the top one that doesn't exclude the domain wins. Subdomains
         (<code>www.example.com</code>) are matched automatically.
       </p>
 

@@ -21,8 +21,9 @@
     <section class="card">
       <h2>Proxies &amp; domains</h2>
       <p class="hint">
-        Each proxy has its own domain list. If a domain is listed on several proxies,
-        the top one wins — reorder with the arrows. Subdomains
+        Each proxy routes either only its listed domains, or everything except
+        them. Listed-domain proxies are checked first; among "all except"
+        proxies the top one that doesn't exclude the domain wins. Subdomains
         (<code>www.example.com</code>) are matched automatically.
       </p>
 
@@ -48,6 +49,8 @@
               id: "p1",
               name: "Local SOCKS",
               type: "socks5",
+              mode: "include",
+              enabled: true,
               host: "127.0.0.1",
               port: 1080,
               username: "",
@@ -58,6 +61,8 @@
               id: "p2",
               name: "Corp HTTP",
               type: "http",
+              mode: "exclude",
+              enabled: false,
               host: "10.0.0.1",
               port: 3128,
               username: "u1",

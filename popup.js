@@ -1,4 +1,9 @@
-import { PROXY_TYPES, generateProxyId } from "./config.js";
+import {
+  PROXY_TYPES,
+  ROUTING_MODES,
+  generateProxyId,
+  parseDomainList,
+} from "./config.js";
 
 const PROXY_PORT_MIN = 1;
 const PROXY_PORT_MAX = 65535;
@@ -13,7 +18,7 @@ const elements = {
 };
 
 // Local editable state: mirrors the saved config; written on "Save & apply".
-// Each entry: { id, name, type, host, port, username, password, domains[] }.
+// Each entry: { id, name, type, mode, enabled, host, port, username, password, domains[] }.
 let proxies = [];
 
 // Collapsed card ids, persisted in localStorage so the state survives popup
@@ -102,6 +107,14 @@ function iconButton(text, title, onClick) {
   return button;
 }
 
+// Keep the multi-line domain textarea sized to its content (capped by CSS
+// max-height). Also re-run on card expand — scrollHeight reads 0 while the
+// card body is display:none.
+function autoGrow(textarea) {
+  textarea.style.height = "auto";
+  textarea.style.height = textarea.scrollHeight + "px";
+}
+
 function renderProxies() {
   const list = elements.proxyList;
   list.innerHTML = "";
@@ -129,7 +142,13 @@ function buildProxyCard(proxy, index) {
     const host = (proxy.host || "").trim() || "—";
     const port = String(proxy.port || "").trim() || "—";
     const count = proxy.domains.length;
-    summary.textContent = `${type} · ${host}:${port} · ${count} ${count === 1 ? "domain" : "domains"}`;
+    const routing =
+      proxy.mode === "exclude"
+        ? count === 0
+          ? "everything"
+          : `all except ${count} ${count === 1 ? "domain" : "domains"}`
+        : `${count} ${count === 1 ? "domain" : "domains"}`;
+    summary.textContent = `${type} · ${host}:${port} · ${routing}`;
     summary.title = summary.textContent;
   };
   refreshSummary();
@@ -155,6 +174,9 @@ function buildProxyCard(proxy, index) {
     }
     persistCollapsedIds();
     card.classList.toggle("collapsed");
+    if (!collapsedIds.has(proxy.id)) {
+      autoGrow(domainInput); // re-measure after unhiding the card body
+    }
     syncCollapseUi();
   });
   syncCollapseUi();
@@ -166,6 +188,23 @@ function buildProxyCard(proxy, index) {
     proxy.name = name.value;
   });
 
+  // Per-proxy on/off switch: a disabled proxy keeps its settings but is
+  // excluded from routing. Toggling saves immediately (like the global
+  // toggle) — no need to hunt for "Save & apply".
+  const proxySwitch = el("label", "switch mini-switch");
+  proxySwitch.title = "Enable/disable this proxy";
+  const proxyCheckbox = el("input");
+  proxyCheckbox.type = "checkbox";
+  proxyCheckbox.checked = proxy.enabled !== false;
+  const proxyTrack = el("span", "switch-track");
+  proxySwitch.append(proxyCheckbox, proxyTrack);
+  card.classList.toggle("disabled", !proxyCheckbox.checked);
+  proxyCheckbox.addEventListener("change", async () => {
+    proxy.enabled = proxyCheckbox.checked;
+    card.classList.toggle("disabled", !proxy.enabled);
+    applyChanges(); // save + apply right away
+  });
+
   const actions = el("div", "card-actions");
   const up = iconButton("↑", "Move up (higher priority)", () => moveProxy(index, -1));
   up.disabled = index === 0;
@@ -175,7 +214,7 @@ function buildProxyCard(proxy, index) {
   remove.classList.add("remove-btn");
   actions.append(up, down, remove);
 
-  header.append(toggle, name, actions);
+  header.append(toggle, name, proxySwitch, actions);
 
   // --- Type / Host / Port ---
   const row = el("div", "row");
@@ -250,38 +289,120 @@ function buildProxyCard(proxy, index) {
   authFields.append(authRow, authHint);
   authFields.hidden = proxy.type !== "http";
 
-  // --- Domains for this proxy ---
+  // --- Routing mode + domains for this proxy ---
   const domainsSection = el("div", "domains-section");
 
   const domainList = el("ul", "domain-list");
 
+  // The mode decides what the domain list below means: the listed domains
+  // themselves, or everything except them.
+  const modeField = el("label", "field mode-field");
+  const modeSpan = el("span");
+  modeSpan.textContent = "Routing mode";
+  const modeSelect = el("select");
+  const MODE_LABELS = {
+    include: "Only listed domains",
+    exclude: "All except listed",
+  };
+  for (const mode of ROUTING_MODES) {
+    const option = el("option");
+    option.value = mode;
+    option.textContent = MODE_LABELS[mode];
+    modeSelect.appendChild(option);
+  }
+  modeSelect.value = ROUTING_MODES.includes(proxy.mode) ? proxy.mode : "include";
+
+  const modeHint = el("p", "hint");
+
+  // Everything on the card that depends on the current mode: the hint, the
+  // collapsed-card summary, and the domain list's empty-state text.
+  const syncModeUi = () => {
+    const exclude = proxy.mode === "exclude";
+    modeHint.textContent = exclude
+      ? "Everything except the listed domains (and their subdomains) goes through this proxy."
+      : "The listed domains and their subdomains go through this proxy.";
+    renderDomainChips(proxy, domainList);
+    refreshSummary();
+  };
+  modeSelect.addEventListener("change", () => {
+    proxy.mode = modeSelect.value;
+    syncModeUi();
+  });
+  modeField.append(modeSpan, modeSelect);
+
+  // Multi-domain input: paste a whole list — one domain per line, or
+  // comma/whitespace separated. Enter adds, Shift+Enter inserts a newline.
   const addForm = el("form", "row add-domain-form");
-  const domainInput = textInput({ placeholder: "example.com" });
+  const domainInput = el("textarea", "domain-input");
+  domainInput.rows = 1;
+  domainInput.placeholder = "example.com — paste a list, one per line";
   domainInput.autocapitalize = "off";
   domainInput.spellcheck = false;
+  domainInput.addEventListener("input", () => autoGrow(domainInput));
+  domainInput.addEventListener("keydown", (event) => {
+    if (event.isComposing) {
+      return; // IME composition in progress
+    }
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      if (typeof addForm.requestSubmit === "function") {
+        addForm.requestSubmit();
+      } else {
+        addForm.dispatchEvent(new Event("submit", { cancelable: true }));
+      }
+    }
+  });
   const addButton = el("button", "btn btn-primary");
   addButton.type = "submit";
   addButton.textContent = "Add";
   addForm.append(domainInput, addButton);
   addForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    const domain = isValidDomain(domainInput.value);
-    if (!domain) {
-      showStatus("Enter a valid domain (e.g. example.com)", "error");
+    const candidates = parseDomainList(domainInput.value);
+    if (candidates.length === 0) {
+      showStatus("Enter at least one valid domain (e.g. example.com)", "error");
       return;
     }
-    if (proxy.domains.includes(domain)) {
-      showStatus(`Already in list: ${domain}`, "info");
+    let added = 0;
+    const duplicates = [];
+    const invalid = [];
+    for (const candidate of candidates) {
+      const domain = isValidDomain(candidate);
+      if (!domain) {
+        invalid.push(candidate);
+      } else if (proxy.domains.includes(domain)) {
+        duplicates.push(domain);
+      } else {
+        proxy.domains.push(domain);
+        added += 1;
+      }
+    }
+    if (added === 0) {
+      // Nothing usable — keep the text so the user can fix it.
+      if (invalid.length > 0) {
+        showStatus(`Invalid: ${invalid.join(", ")}`, "error");
+      } else {
+        showStatus(`Already in list: ${duplicates.join(", ")}`, "info");
+      }
       return;
     }
-    proxy.domains.push(domain);
     renderDomainChips(proxy, domainList);
     domainInput.value = "";
+    autoGrow(domainInput);
     domainInput.focus();
+    const parts = [`Added ${added} ${added === 1 ? "domain" : "domains"}`];
+    if (duplicates.length > 0) {
+      parts.push(`${duplicates.length} already in list`);
+    }
+    if (invalid.length > 0) {
+      parts.push(`${invalid.length} invalid`);
+    }
+    showStatus(parts.join(", "), invalid.length > 0 ? "info" : "success");
   });
 
-  domainsSection.append(addForm, domainList);
-  renderDomainChips(proxy, domainList);
+  domainsSection.append(modeField, modeHint, addForm, domainList);
+  syncModeUi();
+  autoGrow(domainInput);
 
   const body = el("div", "proxy-card-body");
   body.append(row, authFields, domainsSection);
@@ -295,7 +416,10 @@ function renderDomainChips(proxy, listEl) {
 
   if (proxy.domains.length === 0) {
     const empty = el("li", "empty");
-    empty.textContent = "No domains — add one above.";
+    empty.textContent =
+      proxy.mode === "exclude"
+        ? "No exceptions — everything goes through this proxy."
+        : "No domains — add one above.";
     listEl.appendChild(empty);
     return;
   }
@@ -339,6 +463,8 @@ function addProxy() {
     id: generateProxyId(),
     name: "",
     type: "socks5",
+    mode: "include",
+    enabled: true,
     host: "",
     port: "",
     username: "",
@@ -356,18 +482,23 @@ function buildConfigFromState() {
     const proxy = proxies[i];
     const label = (proxy.name || "").trim() || `Proxy ${i + 1}`;
 
-    if (!(proxy.host || "").trim()) {
-      return { ok: false, error: `${label}: host is required` };
-    }
-    const port = Number(proxy.port);
-    if (!Number.isFinite(port) || port < PROXY_PORT_MIN || port > PROXY_PORT_MAX) {
-      return { ok: false, error: `${label}: port must be between 1 and 65535` };
-    }
-    if ((proxy.username || proxy.password) && (!proxy.username || !proxy.password)) {
-      return {
-        ok: false,
-        error: `${label}: username and password must be filled in together`,
-      };
+    // Only enabled proxies must be complete: a disabled one keeps its
+    // (possibly unfinished) settings but routes nothing, so an empty
+    // host/port there is not a save blocker.
+    if (proxy.enabled !== false) {
+      if (!(proxy.host || "").trim()) {
+        return { ok: false, error: `${label}: host is required` };
+      }
+      const port = Number(proxy.port);
+      if (!Number.isFinite(port) || port < PROXY_PORT_MIN || port > PROXY_PORT_MAX) {
+        return { ok: false, error: `${label}: port must be between 1 and 65535` };
+      }
+      if ((proxy.username || proxy.password) && (!proxy.username || !proxy.password)) {
+        return {
+          ok: false,
+          error: `${label}: username and password must be filled in together`,
+        };
+      }
     }
   }
 
@@ -379,6 +510,8 @@ function buildConfigFromState() {
         id: proxy.id || generateProxyId(),
         name: (proxy.name || "").trim() || `Proxy ${index + 1}`,
         type: PROXY_TYPES.includes(proxy.type) ? proxy.type : "socks5",
+        mode: ROUTING_MODES.includes(proxy.mode) ? proxy.mode : "include",
+        enabled: proxy.enabled !== false,
         host: (proxy.host || "").trim(),
         port: Number(proxy.port),
         username: (proxy.username || "").trim(),
@@ -418,6 +551,7 @@ async function populateFromConfig() {
     proxies = (config.proxies ?? []).map((proxy) => ({
       ...proxy,
       port: proxy.port || "",
+      mode: ROUTING_MODES.includes(proxy.mode) ? proxy.mode : "include",
       domains: proxy.domains.slice(),
     }));
     renderProxies();
